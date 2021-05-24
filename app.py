@@ -34,8 +34,11 @@ def make_resp(resp):
 def login():
     """
     传入用户名和密码登录，校验存在用户则生成token
-    :param username: 用户名
-    :param password: 密码
+    example:
+    {
+        "username": "admin",
+        "password": "admin123"
+    }
     :return:
     """
     try:
@@ -87,6 +90,10 @@ def userInfo():
 
 @app.route('/user/logout', methods=['POST'])
 def logout():
+    """
+    用户退出登录，将对应的登录用户登录时间写为0
+    :return:
+    """
     try:
         sess = Session()
         token = request.headers.get('X-Token')
@@ -112,6 +119,10 @@ def logout():
 
 @app.route('/business', methods=['GET'])
 def getBusiness():
+    """
+    获取业务名
+    :return: 查询到的所有业务
+    """
     try:
         token = request.headers.get('X-Token')  # 获取头信息中的X-Token
         get_role_auth(token, QUERY_LIST)  # 校验权限，第二个位置参数为权限名单
@@ -132,6 +143,11 @@ def getBusiness():
 
 @app.route('/module', methods=['GET'])
 def getModule():
+    """
+    获取对应业务的所有模块
+    business: 查询的业务名
+    :return: 对应业务的所有模块
+    """
     try:
         token = request.headers.get('X-Token')  # 获取头信息中的X-Token
         get_role_auth(token, QUERY_LIST)  # 校验权限，第二个位置参数为权限名单
@@ -156,6 +172,10 @@ def getModule():
 
 @app.route('/all', methods=['GET'])  # 上线需要下掉该接口
 def getAll():
+    """
+    测试使用，用于返回所有用例（包含删除的数据）
+    :return: 所有的用例
+    """
     try:
         token = request.headers.get('X-Token')  # 获取头信息中的X-Token
         get_role_auth(token, QUERY_LIST)  # 校验权限，第二个位置参数为权限名单
@@ -191,7 +211,21 @@ def getAll():
 @app.route('/query', methods=['POST'])
 def queryData():
     """
-    查询数据
+    查询符合条件的用例
+    example:
+    {
+        "page": 1,
+        "per_page": 10,
+        "query": {
+            "case_id": "",
+            "case_title": "",
+            "business_name": "测试业务2",
+            "module_name": "",
+            "editor": "",
+            "edit_stime": "2021-04-23 06:19:50",
+            "edit_etime": ""
+        }
+    }
     :return: 查询结果
     """
     try:
@@ -266,6 +300,10 @@ def queryData():
 # 查询用例详情
 @app.route('/single', methods=['GET'])
 def single():
+    """
+    获取单个用例详情
+    :return: 用例详情数据
+    """
     try:
         token = request.headers.get('X-Token')  # 获取头信息中的X-Token
         get_role_auth(token, QUERY_LIST)  # 校验权限，第二个位置参数为权限名单
@@ -282,19 +320,35 @@ def single():
                 business_list, business_list.business_id == case_list.business_id).filter(
                 case_list.case_id == case_id
             ).first()
-            r = dict(zip(('case_title', 'editor', 'case_content', 'business_name', 'module_name'), res))
+            r = dict(zip(('case_title', 'editor', 'case_content', 'business_name', 'module_name'), res))  # 将查询到的数据转换为键值对形式
             resp = {'code': 20000, 'data': r, 'message': 'success'}
+        except TypeError:
+            resp = {'code': 40000, 'data': {}, 'message': "用例不存在"}  # 查询结果为空，抛出该异常
         except Exception as e:
-            resp = {'code': 50000, 'data': {}, 'message': str(e)}
+            resp = {'code': 50000, 'data': {}, 'message': str(e)}  # 异常捕获
         finally:
-            sess.close()
+            sess.close()  # 关闭数据库会话对象
     response = make_resp(resp)
     return response
 
 
-# 添加数据，逐条添加
+# 添加/更新用例
 @app.route('/add', methods=['POST'])
 def add_case():
+    """
+    添加/更新单条用例
+    example:
+    {
+        "case_id": "522",   // 可选参数,不传则为新增，传入则为更新
+        "business_name": "测试业务1",
+        "module_name": "测试模块1",
+        "status":"1",
+        "case_content": "测试内容",
+        "case_title": "测试标题",
+        "editor": "管理员"
+    }
+    :return:
+    """
     try:
         token = request.headers.get('X-Token')  # 获取头信息中的X-Token
         get_role_auth(token, QUERY_LIST)  # 校验权限，第二个位置参数为权限名单
@@ -320,7 +374,7 @@ def add_case():
             status = new_data.get('status')
             case_content = new_data.get('case_content')
             update_case = sess.query(case_list).get(case_id)
-            if update_case:
+            if update_case:  # 若查到已有的用例，则执行更新逻辑
                 update_case.case_title = case_title
                 update_case.business_id = business_id
                 update_case.module_id = module_id
@@ -330,26 +384,31 @@ def add_case():
                 update_case.case_content = case_content
                 sess.commit()
                 resp = {'code': 20000, 'data': {'msg': 'case update successfully'}, 'message': 'success'}
-            elif case_id:
-                resp = {'code': 20000, 'data': {'msg': 'case id not exist'}, 'message': 'failed'}
-            else:
+            elif case_id:   # 若传人的id未查到数据，则抛出异常
+                resp = {'code': 40000, 'data': {'msg': 'case id not exist'}, 'message': 'failed'}
+            else:   # 否则统一执行新增逻辑
                 new_case = case_list(case_title, business_id, module_id, editor, edit_time, status, case_content)
                 sess.add(new_case)
                 sess.commit()
                 resp = {'code': 20000, 'data': {'msg': 'case insert successfully'}, 'message': 'success'}
         except KeyError as e:
             resp = {'code': 40000, 'data': {'msg': str(e)}, 'message': 'value error'}
-        # except Exception as e:
-        #     resp = {'code': 50000, 'data': {'msg': str(e)}, 'message': 'unknown error'}
+        except Exception as e:
+            resp = {'code': 50000, 'data': {'msg': str(e)}, 'message': 'unknown error'}
         finally:
             sess.close()
     response = make_resp(resp)
     return response
 
 
-# 更新数据，逐条更新
+# 删除数据
 @app.route('/delete', methods=['GET'])
 def delete_case():
+    """
+    删除一条用例
+    case_id: 传入待删除的用例id
+    :return:
+    """
     try:
         token = request.headers.get('X-Token')  # 获取头信息中的X-Token
         get_role_auth(token, QUERY_LIST)  # 校验权限，第二个位置参数为权限名单
@@ -358,10 +417,11 @@ def delete_case():
         resp = {'code': 40003, 'data': [], 'message': str(e)}  # 捕获权限校验抛出的异常（token格式错误或失效）
     else:
         sess = Session()
-        case_id = request.args.get('case_id')  # 传入id则触发查询修改（若没有查询到则返回异常），不传则为新增
+        case_id = request.args.get('case_id')  # 传入待删除的用例id
         del_case = sess.query(case_list).get(case_id)
-        del_case.status = 0
+        del_case.status = 0 # 将用例的status字段修改为0（删除状态）
         sess.commit()
+        sess.close()
         resp = {'code': 20000, 'data': {'msg': 'case delete successfully'}, 'message': 'success'}
     response = make_resp(resp)
     return response
